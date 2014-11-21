@@ -1,17 +1,42 @@
 #include "timerdo.h" 
 #include "stm32f4xx.h" 
+#include <math.h>
 
 /* Do stuff when timer interrupt happens */
 
 /* Keep track of amount of time that has gone by */
 static uint64_t timeElapsed;
 static uint32_t ledTime;
-static uint32_t state; 
 static uint32_t buttonStatus; 
+static uint32_t dacVal;
+static uint32_t freq=100;
 
 static void timerdo_update_time(void)
 {
     timeElapsed += 1;
+	if(timeElapsed >= 1000)
+	{
+		timeElapsed -= 1000;
+	}
+	
+	dacVal += 1;
+	if(dacVal >= 4095)
+	{
+		dacVal -= 4095;
+	}
+}
+
+static int getSin(void)
+{
+	
+	float temp = sin(2.0f * (float)M_PI * ((float)(freq*timeElapsed)/1000.0f));
+	temp *= 1024.0f;
+	temp += 2048;
+	return (int)temp; 
+	
+	//return (int) 1024.*sin(2.*M_PI*(float)timeElapsed/1000.)+2048.;
+	
+//	return dacVal;
 }
 
 /* Make leds do something every so often */
@@ -63,46 +88,23 @@ static void timerdo_setup_button(void)
 /* Do something with the leds */
 static void timerdo_led_do(void)
 {
-	switch(state) {
-		case 0:
-			GPIO_ToggleBits(GPIOD, GPIO_Pin_12); // green
-			GPIO_ResetBits(GPIOD, GPIO_Pin_13 | GPIO_Pin_14 | GPIO_Pin_15);
-			break;
-		case 1:
-			GPIO_ToggleBits(GPIOD, GPIO_Pin_13); // orange
-			GPIO_ResetBits(GPIOD, GPIO_Pin_12 | GPIO_Pin_14 | GPIO_Pin_15);
-			break;
-		case 2:
-			GPIO_ToggleBits(GPIOD, GPIO_Pin_14); // red
-			GPIO_ResetBits(GPIOD, GPIO_Pin_12 | GPIO_Pin_13 | GPIO_Pin_15);
-			break;
-		case 3:
-			GPIO_ToggleBits(GPIOD, GPIO_Pin_15); // blue
-			GPIO_ResetBits(GPIOD, GPIO_Pin_12 | GPIO_Pin_13 | GPIO_Pin_14);
-			break;
+	if(buttonStatus) {
+		GPIO_ToggleBits(GPIOD, GPIO_Pin_12); // green
+		DAC_SetChannel1Data(DAC_Align_12b_R, getSin()); // set to 1.4 V
+	}else{
+		GPIO_ResetBits(GPIOD, GPIO_Pin_12); // green
+		DAC_SetChannel1Data(DAC_Align_12b_R, 0); // set to 0 V
 	}
 }
 
 void timerdo_button_do(void)
 {
-	if(GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_0))
-	{
-		if(!buttonStatus) {
-			state = (state+1)%4;
-			buttonStatus = 1;
-		}
-		
-		//GPIO_SetBits(GPIOD,GPIO_Pin_14);
-	}else{
-		buttonStatus = 0;
-		//GPIO_ResetBits(GPIOD,GPIO_Pin_14);	
-	}
+	buttonStatus = GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_0);
 }
 
 void timerdo_setup(void)
 {
 	buttonStatus = 0;
-	state = 0;
     timeElapsed = 0;
     timerdo_setup_leds();
     timerdo_setup_button();
@@ -121,4 +123,10 @@ void timerdo_timerdo(void)
 {
     timerdo_update_time();
     timerdo_update_leds();
+	
+	if(buttonStatus) {
+		DAC_SetChannel1Data(DAC_Align_12b_R, getSin()); // set to 1.4 V
+	}else{
+		DAC_SetChannel1Data(DAC_Align_12b_R, 0); // set to 0 V
+	}
 }
